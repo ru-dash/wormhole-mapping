@@ -371,7 +371,7 @@ def del_wh():
             gate_graph.remove_edge(a, b)
         del wormhole_links[edge]
 
-    # Save updated wormhole file
+    # Save updated wormhole files
     with open(WORMHOLE_FILE, "w") as f:
         json.dump({"links": list(wormhole_links.values())}, f, indent=2)
 
