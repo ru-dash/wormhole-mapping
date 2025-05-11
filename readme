@@ -1,0 +1,30 @@
+This is a todo list in the code. You can safely ignore this.
+
+
+> Regularly update Thera / Turnur (Eve Scout) every minute
+> 
+> wormhole info should include
+> sig_a (sig on this side)
+> max remaining: time until expiration (expires in hours)
+> time found: time_found (found x hour ago)
+> type: wormhole
+> wh: size (Small/Medium/Large/XL) (WH_TYPE eg. S199)
+> wh mass: 
+> reserved: true/false (true or false always set false by default) 
+
+New Routes for Wormholes
+> add_sig <system_name> <wormhole/relic/data> <signature> <optional: destination if wormhole> <optional: lifespan fresh/50%, etc.>
+>  - All SIGs disappear after 48 hours; should include max_remaining
+> del_sig <system_name> <sig_name>
+> list_sig <system_name>
+> frontend: list how many cruisers / battleships, etc. can go through wormhole.
+
+bridge_type should be titan,blops/none
+Titans should only be in range of specific systems.
+ - For example you can mid a titan from 4-HWWF to titan bridge.
+
+Integrate ansiblex gates.
+
+Titan mapping
+
+Obvious authentication & discord / web frontend.
