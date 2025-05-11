@@ -12,11 +12,24 @@ This is a todo list in the code. You can safely ignore this.
 > wh mass: 
 > reserved: true/false (true or false always set false by default) 
 
-New Routes for Wormholes
-> add_sig <system_name> <wormhole/relic/data> <signature> <optional: destination if wormhole> <optional: lifespan fresh/50%, etc.>
->  - All SIGs disappear after 48 hours; should include max_remaining
-> del_sig <system_name> <sig_name>
-> list_sig <system_name>
+Routes
+
+Add SIG (http://localhost:5000/add_wh) **Adding a SIG should include current mass / max_remaining
+{
+  "a": "Thera",
+  "b": "9OO-LH",
+  "sig_a": "ABC-123",
+  "sig_b": "XYZ-789",
+  "private": false
+}
+
+Delete SIG (http://localhost:5000/del_wh)
+{
+  "system_name": "Thera",
+  "sig_id": "ABC-123"
+}
+
+
 > frontend: list how many cruisers / battleships, etc. can go through wormhole.
 
 bridge_type should be titan,blops/none
@@ -28,3 +41,5 @@ Integrate ansiblex gates.
 Titan mapping
 
 Obvious authentication & discord / web frontend.
+
+Credit system to payout scanners.

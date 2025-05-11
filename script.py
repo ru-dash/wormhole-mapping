@@ -59,9 +59,45 @@ def load_sde():
             if a and b and a != "Zarzakh" and b != "Zarzakh":
                 gate_graph.add_edge(a, b)
 
+def load_custom_wormholes():
+    """
+    Loads custom wormholes from wormhole.json if present and not expired (48h UTC).
+    """
+    global wormhole_links
+
+    now = datetime.now(timezone.utc)
+    valid_custom_links = []
+    seen_edges = set()
+
+    if os.path.exists(WORMHOLE_FILE):
+        with open(WORMHOLE_FILE, "r") as f:
+            try:
+                data = json.load(f)
+                for link in data.get("links", []):
+                    # Preserve only if custom and still within 48h
+                    is_custom = link.get("source") == "custom"
+                    added_at_str = link.get("added_at")
+                    if is_custom and added_at_str:
+                        added_at = datetime.fromisoformat(added_at_str)
+                        if (now - added_at) > timedelta(hours=48):
+                            continue  # Expired custom wormhole
+
+                    a, b = link["a"], link["b"]
+                    edge = frozenset([a, b])
+                    valid_custom_links.append(link)
+                    seen_edges.add(edge)
+                    gate_graph.add_edge(a, b)
+                    wormhole_links[edge] = link
+            except Exception as e:
+                print(f"Failed to load wormhole.json: {e}")
+
+    return valid_custom_links
+
+
 def fetch_evescout_wormholes():
     global wormhole_links
     print("Fetching wormholes from Eve-Scout public API...")
+
     try:
         response = requests.get("https://api.eve-scout.com/v2/public/signatures", timeout=10)
         if response.status_code != 200:
@@ -73,16 +109,18 @@ def fetch_evescout_wormholes():
         new_edges = set()
         now = datetime.now(timezone.utc)
 
+        # Load and preserve custom wormholes first
+        valid_custom_links = load_custom_wormholes()
+
         for sig in data:
             a = sig.get("in_system_name")
             b = sig.get("out_system_name")
-
             if not a or not b:
-                continue  # Skip malformed entries
+                continue
 
             exp_time = datetime.fromisoformat(sig.get("expires_at").replace("Z", "+00:00"))
             if (exp_time - now).total_seconds() < 0:
-                continue  # Expired wormhole
+                continue  # Already expired
 
             hours_remaining = max(0, round((exp_time - now).total_seconds() / 3600))
             hours_ago = max(0, round((now - datetime.fromisoformat(sig.get("created_at").replace("Z", "+00:00"))).total_seconds() / 3600))
@@ -105,33 +143,36 @@ def fetch_evescout_wormholes():
                 "max_remaining": hours_remaining,
                 "time_found": hours_ago,
                 "type": "wormhole",
-                "wh_mass": sig.get("wh_type"),  # or adjust if mass is available separately
-                "private": False
+                "wh_mass": sig.get("wh_type"),
+                "private": False,
+                "source": "evescout"
             }
 
             edge = frozenset([a, b])
             new_links.append(link)
             new_edges.add(edge)
 
-        # Remove stale wormhole links from memory
-        for edge in list(wormhole_links.keys()):
-            if edge not in new_edges:
-                a, b = tuple(edge)
-                if gate_graph.has_edge(a, b):
-                    gate_graph.remove_edge(a, b)
+        # Remove any Eve-Scout edges that are no longer present
+        stale_edges = [edge for edge, link in wormhole_links.items() if link.get("source") == "evescout" and edge not in new_edges]
+        for edge in stale_edges:
+            a, b = tuple(edge)
+            if gate_graph.has_edge(a, b):
+                gate_graph.remove_edge(a, b)
+            del wormhole_links[edge]
 
-        # Reset and populate with updated links
-        wormhole_links = {}
+        # Add new Eve-Scout links
         for link in new_links:
             a, b = link["a"], link["b"]
+            edge = frozenset([a, b])
             gate_graph.add_edge(a, b)
-            wormhole_links[frozenset([a, b])] = link
+            wormhole_links[edge] = link
 
-        # Save to file for persistence/debugging
+        # Merge for saving (customs already in wormhole_links)
+        all_links = list(wormhole_links.values())
         with open(WORMHOLE_FILE, "w") as f:
-            json.dump({"links": new_links}, f, indent=2)
+            json.dump({"links": all_links}, f, indent=2)
 
-        print(f"Updated {len(new_links)} wormhole links (including Thera/Turnur).")
+        print(f"Saved {len(all_links)} total wormhole links (Eve-Scout + custom).")
     except Exception as e:
         print(f"Failed to fetch wormholes from Eve-Scout: {e}")
 
@@ -253,6 +294,94 @@ def route():
         "total_jumps": len(steps) - 1,
         "used_cyno": any(s["type"] == "cyno" for s in steps)
     })
+
+@app.route("/add_wh", methods=["POST"])
+def add_wh():
+    global wormhole_links
+
+    data = request.get_json()
+    system_a = data.get("a")
+    system_b = data.get("b")
+    sig_a = data.get("sig_a")
+    sig_b = data.get("sig_b")
+    private = data.get("private", True)
+
+    if not system_a or not system_b:
+        return jsonify({"error": "Missing 'a' or 'b' system name"}), 400
+
+    if system_a not in name_to_id or system_b not in name_to_id:
+        return jsonify({"error": "One or both systems not recognized"}), 404
+
+    now = datetime.now(timezone.utc).isoformat()
+    link = {
+        "a": system_a,
+        "b": system_b,
+        "sig_a": sig_a,
+        "sig_b": sig_b,
+        "type": "wormhole",
+        "source": "custom",
+        "added_at": now,
+        "wh_mass": "unknown",
+        "private": private
+    }
+
+    edge = frozenset([system_a, system_b])
+    gate_graph.add_edge(system_a, system_b)
+    wormhole_links[edge] = link
+
+    # Save updated wormhole list
+    with open(WORMHOLE_FILE, "w") as f:
+        json.dump({"links": list(wormhole_links.values())}, f, indent=2)
+
+    return jsonify({
+        "message": f"Custom wormhole added between {system_a} and {system_b}.",
+        "added_at": now,
+        "private": private,
+        "sig_a": sig_a,
+        "sig_b": sig_b
+    }), 200
+
+@app.route("/del_wh", methods=["POST"])
+def del_wh():
+    global wormhole_links
+
+    data = request.get_json()
+    system = data.get("system_name")
+    sig_id = data.get("sig_id")
+
+    if not system or not sig_id:
+        return jsonify({"error": "Both 'system_name' and 'sig_id' are required"}), 400
+
+    to_remove = []
+
+    for edge, link in wormhole_links.items():
+        if link.get("source") != "custom":
+            continue
+
+        if (system == link.get("a") or system == link.get("b")) and \
+           (sig_id == link.get("sig_a") or sig_id == link.get("sig_b")):
+            to_remove.append(edge)
+
+    if not to_remove:
+        return jsonify({"message": "No matching custom wormhole found."}), 404
+
+    for edge in to_remove:
+        a, b = tuple(edge)
+        if gate_graph.has_edge(a, b):
+            gate_graph.remove_edge(a, b)
+        del wormhole_links[edge]
+
+    # Save updated wormhole file
+    with open(WORMHOLE_FILE, "w") as f:
+        json.dump({"links": list(wormhole_links.values())}, f, indent=2)
+
+    return jsonify({
+        "message": f"Removed {len(to_remove)} custom wormhole(s).",
+        "criteria": {
+            "system_name": system,
+            "sig_id": sig_id
+        }
+    }), 200
 
 if __name__ == "__main__":
     download_sde()
