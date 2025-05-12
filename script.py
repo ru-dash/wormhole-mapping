@@ -79,7 +79,7 @@ def load_custom_wormholes():
                     added_at_str = link.get("added_at")
                     if is_custom and added_at_str:
                         added_at = datetime.fromisoformat(added_at_str)
-                        if (now - added_at) > timedelta(hours=48):
+                        if (now - added_at) > timedelta(hours=24):
                             continue  # Expired custom wormhole
 
                     a, b = link["a"], link["b"]
@@ -305,6 +305,10 @@ def add_wh():
     sig_a = data.get("sig_a")
     sig_b = data.get("sig_b")
     private = data.get("private", True)
+    wh_type = data.get("wh_type", "unknown")
+    max_remaining = data.get("max_remaining", "unknown")
+    in_class = data.get("in_system_class")
+    out_class = data.get("out_system_class")
 
     if not system_a or not system_b:
         return jsonify({"error": "Missing 'a' or 'b' system name"}), 400
@@ -313,6 +317,7 @@ def add_wh():
         return jsonify({"error": "One or both systems not recognized"}), 404
 
     now = datetime.now(timezone.utc).isoformat()
+
     link = {
         "a": system_a,
         "b": system_b,
@@ -321,7 +326,9 @@ def add_wh():
         "type": "wormhole",
         "source": "custom",
         "added_at": now,
-        "wh_mass": "unknown",
+        "wh_mass": wh_type,
+        "wh_type": wh_type,
+        "max_remaining_custom": max_remaining,
         "private": private
     }
 
@@ -329,16 +336,16 @@ def add_wh():
     gate_graph.add_edge(system_a, system_b)
     wormhole_links[edge] = link
 
-    # Save updated wormhole list
+    # Save to wormhole.json
     with open(WORMHOLE_FILE, "w") as f:
         json.dump({"links": list(wormhole_links.values())}, f, indent=2)
 
     return jsonify({
         "message": f"Custom wormhole added between {system_a} and {system_b}.",
         "added_at": now,
-        "private": private,
-        "sig_a": sig_a,
-        "sig_b": sig_b
+        "wh_type": wh_type,
+        "max_remaining": max_remaining,
+        "private": private
     }), 200
 
 @app.route("/del_wh", methods=["POST"])
@@ -382,6 +389,30 @@ def del_wh():
             "sig_id": sig_id
         }
     }), 200
+
+@app.route("/list_sig", methods=["GET"])
+def list_sig():
+    system = request.args.get("system_name")
+
+    if not system:
+        return jsonify({"error": "Missing 'system_name'"}), 400
+
+    if system not in name_to_id:
+        return jsonify({"error": f"System '{system}' not recognized"}), 404
+
+    matches = []
+    for link in wormhole_links.values():
+        if link.get("a") == system or link.get("b") == system:
+            matches.append(link)
+
+    if not matches:
+        return jsonify({"message": f"No wormholes found for {system}."}), 200
+
+    return jsonify({
+        "system": system,
+        "wormholes": matches,
+        "count": len(matches)
+    })
 
 if __name__ == "__main__":
     download_sde()
