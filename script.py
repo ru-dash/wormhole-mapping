@@ -204,7 +204,7 @@ def get_valid_cyno_candidates(bridge_type):
         if meta["security"] <= 0.4
     ]
 
-def build_route(start, end, max_ly, max_cynos, bridge_type):
+def build_route(start, end, max_ly, max_cynos, bridge_type, use_ansis=True):
     if start not in name_to_id or end not in name_to_id:
         return [{"error": f"System not found in SDE: {start if start not in name_to_id else end}"}]
     if start not in gate_graph or end not in gate_graph:
@@ -247,8 +247,14 @@ def build_route(start, end, max_ly, max_cynos, bridge_type):
         # Gate and wormhole neighbors
         for neighbor in gate_graph.neighbors(current):
             edge = frozenset([current, neighbor])
-            if edge in wormhole_links:
-                heappush(heap, (cost + 1, cynos_used, neighbor, path + [("wormhole", neighbor)]))
+            wh_data = wormhole_links.get(edge)
+
+            if wh_data:
+                wh_type = wh_data.get("type")
+                if wh_type == "wormhole":
+                    heappush(heap, (cost + 1, cynos_used, neighbor, path + [("wormhole", neighbor)]))
+                elif wh_type == "ansiblex" and use_ansis:
+                    heappush(heap, (cost + 1, cynos_used, neighbor, path + [("ansiblex", neighbor)]))
             else:
                 heappush(heap, (cost + 1, cynos_used, neighbor, path + [("gate", neighbor)]))
 
@@ -283,7 +289,8 @@ def route():
     if start not in name_to_id or end not in name_to_id:
         return jsonify({"error": "System not found"}), 404
 
-    steps = build_route(start, end, max_ly, max_cynos, bridge_type)
+    use_ansis = request.args.get("use_ansis", "true").lower() == "true"
+    steps = build_route(start, end, max_ly, max_cynos, bridge_type, use_ansis)
     if not steps:
         return jsonify({"error": "No path found"}), 404
 
