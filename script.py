@@ -195,23 +195,77 @@ def ly_dist(a, b):
     dz = (a["z"] - b["z"]) / LY_CONVERSION
     return math.sqrt(dx ** 2 + dy ** 2 + dz ** 2)
 
-def get_valid_cyno_candidates(bridge_type):
-    if bridge_type == "none":
-        return []
-    return [
-        meta["name"]
-        for sid, meta in system_meta.items()
-        if meta["security"] <= 0.4
-    ]
+TITAN_FILE = "titan_bridge.json"
 
-def build_route(start, end, max_ly, max_cynos, bridge_type, use_ansis=True):
+def load_titan_bridges():
+    if not os.path.exists(TITAN_FILE):
+        return set()
+    with open(TITAN_FILE, "r") as f:
+        return set(json.load(f).get("bridges", []))
+
+def save_titan_bridges(systems):
+    with open(TITAN_FILE, "w") as f:
+        json.dump({"bridges": sorted(systems)}, f, indent=2)
+
+def get_valid_cyno_candidates(bridge_types):
+    titan_systems = load_titan_bridges()
+    cynos = set()
+    for sid, meta in system_meta.items():
+        if meta["security"] > 0.4:
+            continue
+        if "blops" in bridge_types:
+            cynos.add(meta["name"])
+        if "titan" in bridge_types and meta["name"] in titan_systems:
+            cynos.add(meta["name"])
+    return cynos
+
+@app.route("/titan_bridge/list", methods=["GET"])
+def list_titan_bridges():
+    bridges = sorted(load_titan_bridges())
+    return jsonify({"bridges": bridges, "count": len(bridges)})
+    
+@app.route("/titan_bridge/add", methods=["POST"])
+def add_titan_bridge():
+    data = request.get_json()
+    system = data.get("system_name")
+
+    if not system or system not in name_to_id:
+        return jsonify({"error": "Invalid or missing 'system_name'"}), 400
+
+    bridges = load_titan_bridges()
+    if system in bridges:
+        return jsonify({"message": f"{system} is already a Titan bridge system."}), 200
+
+    bridges.add(system)
+    save_titan_bridges(bridges)
+
+    return jsonify({"message": f"{system} added to Titan bridges."})
+    
+@app.route("/titan_bridge/remove", methods=["POST"])
+def remove_titan_bridge():
+    data = request.get_json()
+    system = data.get("system_name")
+
+    if not system:
+        return jsonify({"error": "Missing 'system_name'"}), 400
+
+    bridges = load_titan_bridges()
+    if system not in bridges:
+        return jsonify({"message": f"{system} is not a Titan bridge system."}), 404
+
+    bridges.remove(system)
+    save_titan_bridges(bridges)
+
+    return jsonify({"message": f"{system} removed from Titan bridges."})
+ 
+def build_route(start, end, max_ly, max_cynos, bridge_types, use_ansis=True):
     if start not in name_to_id or end not in name_to_id:
         return [{"error": f"System not found in SDE: {start if start not in name_to_id else end}"}]
     if start not in gate_graph or end not in gate_graph:
         return [{"error": f"System not found in gate graph: {start if start not in gate_graph else end}"}]
         raise ValueError(f"Start or end system not in graph: {start}, {end}")
     cynos = {
-        system for system in get_valid_cyno_candidates(bridge_type)
+        system for system in get_valid_cyno_candidates(bridge_types)
         if system in name_to_id and system in gate_graph
     }
     visited = set()
@@ -273,15 +327,18 @@ def build_route(start, end, max_ly, max_cynos, bridge_type, use_ansis=True):
 def route():
     start = request.args.get("start")
     end = request.args.get("end")
-    bridge_type = request.args.get("bridge_type", "titan")
+    bridge_types = request.args.get("bridge_type", "titan").lower().split(",")
 
-    if bridge_type == "titan":
-        max_ly = 6.0
-    elif bridge_type == "blops":
+    # Determine max_ly from most permissive bridge type
+    if "blops" in bridge_types and "titan" not in bridge_types:
         max_ly = 8.0
+    elif "titan" in bridge_types and "blops" not in bridge_types:
+        max_ly = 6.0
+    elif "titan" in bridge_types and "blops" in bridge_types:
+        max_ly = max(6.0, 8.0)  # 8.0 to favor flexibility
     else:
         max_ly = float(request.args.get("range", DEFAULT_CYNO_RANGE))
-
+        
     max_cynos = int(request.args.get("max_cynos", DEFAULT_MAX_CYNOS))
 
     if not start or not end:
@@ -290,7 +347,7 @@ def route():
         return jsonify({"error": "System not found"}), 404
 
     use_ansis = request.args.get("use_ansis", "true").lower() == "true"
-    steps = build_route(start, end, max_ly, max_cynos, bridge_type, use_ansis)
+    steps = build_route(start, end, max_ly, max_cynos, bridge_types, use_ansis)
     if not steps:
         return jsonify({"error": "No path found"}), 404
 

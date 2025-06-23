@@ -1,20 +1,4 @@
 todo list in the readme. You can safely ignore this.
 
-add_sig
-Max remaining time / mass.
-Ensure guaranteed 48 hour deletion works.
-list_sig system_name
-
-Some sort of Drifter Hole integration
-
-On Frontend
- - I want to list XL hole, etc.
- - I want to do some other cool stuff like calculate number of cruisers / battleships
-
- Improve Bridge Types
-bridge_type should be titan,blops/none instead of current titan/blops/none configuration.
-Titans should only be in range of specific systems. eg. you can mid a titan from 4-HWWF to titan bridge.
-
-Integrate Ansiblex gates as wormhole. Setup oauth structures with FRTBM toon to properly map ansis.
-
-Obvious authentication & discord / web frontend.
+Ansiblex gates need to be manually added.
+Discord frontend needs to be created.
