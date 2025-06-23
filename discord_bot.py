@@ -5,7 +5,7 @@ import aiohttp
 import asyncio
 
 API_BASE = "http://localhost:5000"  # Change if hosted remotely
-TOKEN = "xxx"    # Replace with your bot token
+TOKEN = "XXX"    # Replace with your bot token
 
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -61,49 +61,27 @@ async def route(
         if r.status != 200:
             return await interaction.followup.send(f"❌ Error: {data.get('error')}", ephemeral=True)
 
-        steps = data["steps"]
-        lines = [f"**Route from `{data['from']}` to `{data['to']}`**"]
-        for step in steps:
-            line = f"{step['type'].upper()}: {step['system']}"
+        steps = data.get("steps", [])
+        jump_count = data.get("jump_count", 0)
+        cyno_count = data.get("cyno_count", 0)
+
+        lines = [
+            f"**Route from `{data['from']}` to `{data['to']}`**",
+            ""
+        ]
+
+        for idx, step in enumerate(steps, start=1):
+            region = step.get("region", "")
+            region_text = f" ({region})" if region else ""
+            line = f"{idx}. **{step['type'].upper()}**: `{step['system']}`{region_text}"
+
             if step["type"] == "wormhole":
                 wh = step.get("info", {})
                 line += f" ({wh.get('wh_type', '?')})"
             lines.append(line)
 
         await interaction.followup.send("\n".join(lines[:20]), ephemeral=True)
-
-@tree.command(name="add_wh", description="Add a custom wormhole between two systems")
-@app_commands.describe(
-    a_desto="First system name (entry side)",
-    b_desto="Second system name (exit side)",
-    sig_a="Signature ID on first system",
-    sig_b="Signature ID on second system",
-    wh_type="Wormhole type (e.g. K162)"
-)
-async def add_wh(
-    interaction: discord.Interaction,
-    a_desto: str,
-    b_desto: str,
-    sig_a: str,
-    sig_b: str,
-    wh_type: str = "K162"
-):
-    await interaction.response.defer(thinking=True, ephemeral=True)
-
-    payload = {
-        "a": a_desto,
-        "b": b_desto,
-        "sig_a": sig_a,
-        "sig_b": sig_b,
-        "wh_type": wh_type,
-        "max_remaining": "unknown",
-        "private": False
-    }
-
-    async with session.post(f"{API_BASE}/add_wh", json=payload) as r:
-        data = await r.json()
-        await interaction.followup.send(data.get("message", str(data)), ephemeral=True)
-
+        
 @tree.command(name="del_wh", description="Delete a custom wormhole by sig ID")
 async def del_wh(interaction: discord.Interaction, system_name: str, sig_id: str):
     await interaction.response.defer(thinking=True, ephemeral=True)
